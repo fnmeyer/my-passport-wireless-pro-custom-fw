@@ -48,16 +48,15 @@ def RunPipe(pipeline, infile=None, outfile=None,
 
         last_pipe = subprocess.Popen(cmd, **kwargs)
 
-    if capture:
-        ret = last_pipe.communicate()[0]
-        if not ret:
-            return None
-        elif oneline:
-            return ret.rstrip('\r\n')
-        else:
-            return ret
-    else:
+    if not capture:
         return os.waitpid(last_pipe.pid, 0)[1] == 0
+    ret = last_pipe.communicate()[0]
+    if not ret:
+        return None
+    elif oneline:
+        return ret.rstrip('\r\n')
+    else:
+        return ret
 
 def Output(*cmd):
     return RunPipe([cmd], capture=True)

@@ -79,8 +79,7 @@ def get_symbol_subset(root, filter_func):
                 continue
             yield item
         elif item.is_menu() or item.is_choice():
-            for i in get_symbol_subset(item, filter_func):
-                yield i
+            yield from get_symbol_subset(item, filter_func)
 
 
 def get_symbol_parents(item, root=None, enable_choice=False):
@@ -124,17 +123,26 @@ def format_asciidoc_table(root, get_label_func, filter_func=lambda x: True,
 
     """
 
-    lines = []
-    for item in get_symbol_subset(root, filter_func):
-        lines.append(format_func(what="symbol", symbol=item, root=root,
-                                 get_label_func=get_label_func,
-                                 enable_choice=enable_choice))
+    lines = [
+        format_func(
+            what="symbol",
+            symbol=item,
+            root=root,
+            get_label_func=get_label_func,
+            enable_choice=enable_choice,
+        )
+        for item in get_symbol_subset(root, filter_func)
+    ]
     if sorted:
         lines.sort(key=lambda x: x.lower())
     table = ":halign: center\n\n"
     width, columns = format_func(what="layout")
-    table = "[width=\"{0}\",cols=\"{1}\",options=\"header\"]\n".format(width, columns)
-    table += "|===================================================\n"
+    table = (
+        "[width=\"{0}\",cols=\"{1}\",options=\"header\"]\n".format(
+            width, columns
+        )
+        + "|===================================================\n"
+    )
     table += format_func(what="header", header=item_label, root=root)
     table += "\n" + "".join(lines) + "\n"
     table += "|===================================================\n"
@@ -195,7 +203,7 @@ class Buildroot:
         self.package_dir = os.path.join(self.base_dir, self.package_dirname)
         # The kconfiglib requires an environment variable named "srctree" to
         # load the configuration, so set it.
-        os.environ.update({'srctree': self.base_dir})
+        os.environ['srctree'] = self.base_dir
         self.config = kconfiglib.Config(os.path.join(self.base_dir,
                                                      self.root_config))
         self._deprecated = self.config.get_symbol(self.deprecated_symbol)
@@ -213,7 +221,7 @@ class Buildroot:
         """
         symbols = re.sub("[-+.]", "_", package_name)
         symbols = symbols.upper()
-        symbols = tuple([prefix + symbols for prefix in self.package_prefixes])
+        symbols = tuple(prefix + symbols for prefix in self.package_prefixes)
         return symbols
 
     def _is_deprecated(self, symbol):
@@ -244,7 +252,7 @@ class Buildroot:
             return False
         pkg_name = self._get_pkg_name(symbol)
 
-        pattern = "^(HOST_)?" + pkg_name + "$"
+        pattern = f"^(HOST_)?{pkg_name}$"
         pattern = re.sub("_", ".", pattern)
         pattern = re.compile(pattern, re.IGNORECASE)
         # Here, we cannot just check for the location of the Config.in because
@@ -267,15 +275,17 @@ class Buildroot:
         if not hasattr(self, "_package_list"):
             pkg_list = []
             for _, _, files in os.walk(self.package_dir):
-                for file_ in (f for f in files if f.endswith(".mk")):
-                    pkg_list.append(re.sub(r"(.*?)\.mk", r"\1", file_))
+                pkg_list.extend(
+                    re.sub(r"(.*?)\.mk", r"\1", file_)
+                    for file_ in (f for f in files if f.endswith(".mk"))
+                )
             setattr(self, "_package_list", pkg_list)
         for pkg in getattr(self, "_package_list"):
             if type == 'real':
                 if pattern.match(pkg) and not self._exists_virt_symbol(pkg):
                     return True
-            if type == 'virtual':
-                if pattern.match('has_' + pkg):
+            elif type == 'virtual':
+                if pattern.match(f'has_{pkg}'):
                     return True
         return False
 
@@ -293,13 +303,10 @@ class Buildroot:
                             a symbol exists defining it as a virtual package
 
         """
-        virt_pattern = "BR2_PACKAGE_HAS_" + pkg_name + "$"
+        virt_pattern = f"BR2_PACKAGE_HAS_{pkg_name}$"
         virt_pattern = re.sub("_", ".", virt_pattern)
         virt_pattern = re.compile(virt_pattern, re.IGNORECASE)
-        for sym in self.config:
-            if virt_pattern.match(sym.get_name()):
-                return True
-        return False
+        return any(virt_pattern.match(sym.get_name()) for sym in self.config)
 
     def _get_pkg_name(self, symbol):
         """ Return the package name of the specified symbol.
@@ -385,7 +392,7 @@ class Buildroot:
             return None
 
         def _get_providers(symbol):
-            providers = list()
+            providers = []
             for sym in self.config:
                 if not sym.is_symbol():
                     continue
@@ -401,7 +408,7 @@ class Buildroot:
                             parent_pkg = _get_parent_package(sym)
                             if parent_pkg is not None:
                                 l = self._get_symbol_label(parent_pkg, False) \
-                                  + " (w/ " + l + ")"
+                                      + " (w/ " + l + ")"
                             providers.append(l)
                         else:
                             providers.extend(_get_providers(sym))
@@ -417,9 +424,9 @@ class Buildroot:
             pkg = re.sub(r"^BR2_PACKAGE_HAS_(.+)$", r"\1", symbol.get_name())
             providers = _get_providers(symbol)
 
-            return "| {0:<20} <| {1:<32} <| {2}\n".format(pkg.lower(),
-                                                          '+' + symbol.get_name() + '+',
-                                                          ", ".join(providers))
+            return "| {0:<20} <| {1:<32} <| {2}\n".format(
+                pkg.lower(), f'+{symbol.get_name()}+', ", ".join(providers)
+            )
 
         message = "Invalid argument 'what': '%s'\n" % str(what)
         message += "Allowed values are: 'layout', 'header' and 'symbol'"
@@ -452,10 +459,7 @@ class Buildroot:
 
         list_config = self.list_info[list_type]
         root_title = list_config.get('root_menu')
-        if root_title:
-            root_item = _get_menu(root_title)
-        else:
-            root_item = self.config
+        root_item = _get_menu(root_title) if root_title else self.config
         filter_ = getattr(self, list_config.get('filter'))
         filter_func = lambda x: filter_(x)
         format_func = getattr(self, list_config.get('format'))

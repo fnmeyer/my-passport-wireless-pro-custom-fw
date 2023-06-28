@@ -227,12 +227,6 @@ class Series(dict):
         Return:
             Patch string, like 'RFC PATCH v5' or just 'PATCH'
         """
-        version = ''
-        if self.get('version'):
-            version = ' v%s' % self['version']
-
-        # Get patch name prefix
-        prefix = ''
-        if self.get('prefix'):
-            prefix = '%s ' % self['prefix']
-        return '%sPATCH%s' % (prefix, version)
+        version = f" v{self['version']}" if self.get('version') else ''
+        prefix = f"{self['prefix']} " if self.get('prefix') else ''
+        return f'{prefix}PATCH{version}'

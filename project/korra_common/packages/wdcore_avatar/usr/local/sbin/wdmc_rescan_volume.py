@@ -15,6 +15,8 @@ def send_volume_add_to_crawler( base_path ):
     <source>"source"</source>\
     <volume>\
     <base_path>' + base_path + '</base_path>\
+    <base_path>' + base_path + '</base_path>\
+    <mount_point>' + base_path + '</mount_point>\
     <mount_point>' + base_path + '</mount_point>\
     <dev_name>dev_name</dev_name>\
     <drive_path_raw>drive_path_raw</drive_path_raw>\
@@ -27,13 +29,12 @@ def send_volume_add_to_crawler( base_path ):
     <internal_volume>true</internal_volume>\
     </volume>\
     </volume_data>'
-    data = '\x00\x00\x00\x00'
-    wdmcpipe = os.open(wdmc_pipe, os.O_WRONLY | os.O_NONBLOCK)
-    if wdmcpipe:
+    if wdmcpipe := os.open(wdmc_pipe, os.O_WRONLY | os.O_NONBLOCK):
         os.write(wdmcpipe, xml)
+        data = '\x00\x00\x00\x00'
         os.write(wdmcpipe, buffer(data))
         os.close(wdmcpipe)
-    
+
     return
 
 rescan_needed = 0;
@@ -54,7 +55,7 @@ with con:
     cur.execute ("SELECT base_path, is_connected FROM Volumes where dynamic_volume != 'true'")
     while True:
         row = cur.fetchone ()
-        if row == None:
+        if row is None:
             break
         if row[1] == 'true':
             base_path = row[0]

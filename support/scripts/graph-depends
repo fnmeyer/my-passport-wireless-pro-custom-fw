@@ -86,9 +86,7 @@ def get_targets():
     output = p.communicate()[0].strip()
     if p.returncode != 0:
         return None
-    if output == '':
-        return []
-    return output.split(' ')
+    return [] if output == '' else output.split(' ')
 
 # Execute the "make <pkg>-show-depends" command to get the list of
 # dependencies of a given list of packages, and return the list of
@@ -96,8 +94,7 @@ def get_targets():
 def get_depends(pkgs):
     sys.stderr.write("Getting dependencies for %s\n" % pkgs)
     cmd = ["make", "-s", "--no-print-directory" ]
-    for pkg in pkgs:
-        cmd.append("%s-show-depends" % pkg)
+    cmd.extend(f"{pkg}-show-depends" for pkg in pkgs)
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, universal_newlines=True)
     output = p.communicate()[0]
     if p.returncode != 0:
@@ -111,10 +108,7 @@ def get_depends(pkgs):
     for i in range(0, len(pkgs)):
         pkg = pkgs[i]
         pkg_deps = output[i].split(" ")
-        if pkg_deps == ['']:
-            deps[pkg] = []
-        else:
-            deps[pkg] = pkg_deps
+        deps[pkg] = [] if pkg_deps == [''] else pkg_deps
     return deps
 
 # Recursive function that builds the tree of dependencies for a given
@@ -133,7 +127,7 @@ def get_all_depends(pkgs):
         filtered_pkgs.append(pkg)
         allpkgs.append(pkg)
 
-    if len(filtered_pkgs) == 0:
+    if not filtered_pkgs:
         return []
 
     depends = get_depends(filtered_pkgs)
@@ -151,7 +145,7 @@ def get_all_depends(pkgs):
             dependencies.append((pkg, dep))
             deps.add(dep)
 
-    if len(deps) != 0:
+    if deps:
         newdeps = get_all_depends(deps)
         if newdeps is not None:
             dependencies += newdeps
@@ -243,13 +237,13 @@ def remove_transitive_deps(pkg,deps):
 
 # This function removes the dependency on the 'toolchain' package
 def remove_toolchain_deps(pkg,deps):
-    return [p for p in deps[pkg] if not p == 'toolchain']
+    return [p for p in deps[pkg] if p != 'toolchain']
 
 # This functions trims down the dependency list of all packages.
 # It applies in sequence all the dependency-elimination methods.
 def remove_extra_deps(deps):
     for pkg in list(deps.keys()):
-        if not pkg == 'all':
+        if pkg != 'all':
             deps[pkg] = remove_toolchain_deps(pkg,deps)
     for pkg in list(deps.keys()):
         if not transitive or pkg == 'all':
@@ -261,21 +255,17 @@ dict_deps = remove_extra_deps(dict_deps)
 # Print the attributes of a node: label and fill-color
 def print_attrs(pkg):
     name = pkg_node_name(pkg)
-    if pkg == 'all':
-        label = 'ALL'
-    else:
-        label = pkg
+    label = 'ALL' if pkg == 'all' else pkg
     if pkg == 'all' or (mode == MODE_PKG and pkg == rootpkg):
         color = root_colour
-    else:
-        if pkg.startswith('host') \
+    elif pkg.startswith('host') \
         or pkg.startswith('toolchain') \
         or pkg.startswith('rootfs'):
-            color = host_colour
-        else:
-            color = target_colour
+        color = host_colour
+    else:
+        color = target_colour
     print("%s [label = \"%s\"]" % (name, label))
-    print("%s [color=%s,style=filled]" % (name, color))
+    print(f"{name} [color={color},style=filled]")
 
 # Print the dependency graph of a package
 def print_pkg_deps(depth, pkg):
@@ -287,7 +277,7 @@ def print_pkg_deps(depth, pkg):
         return
     if max_depth == 0 or depth < max_depth:
         for d in dict_deps[pkg]:
-            print("%s -> %s" % (pkg_node_name(pkg), pkg_node_name(d)))
+            print(f"{pkg_node_name(pkg)} -> {pkg_node_name(d)}")
             print_pkg_deps(depth+1, d)
 
 # Start printing the graph data
