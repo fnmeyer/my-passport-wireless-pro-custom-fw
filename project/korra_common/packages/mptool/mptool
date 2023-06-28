@@ -9,18 +9,13 @@ Check board version
 	- if gpio79 == 1, then Korra
 	"""
 	if os.path.exists("/sys/class/gpio/gpio79/value") == False:
-		f=open("/sys/class/gpio/export", "w")
+		with open("/sys/class/gpio/export", "w") as f:
+			f.write("79")
+	with open("/sys/class/gpio/gpio79/value", "r") as fp:
+		board_check=fp.read().strip('\n')
+	with open("/sys/class/gpio/unexport", "w") as f:
 		f.write("79")
-		f.close()
-	fp=open("/sys/class/gpio/gpio79/value", "r")
-	board_check=fp.read().strip('\n')
-	fp.close()
-	f=open("/sys/class/gpio/unexport", "w")
-	f.write("79")
-	f.close()
-	if board_check == "0":
-		return "Korra"
-	elif board_check == "1":
+	if board_check in ["0", "1"]:
 		return "Korra"
 	else:
 		error_code(1000)
@@ -60,9 +55,8 @@ A class for MP including base get/set/test function.
 		if os.path.exists("/tmp/mptool_on") == False:
 			self.disable_mcu_msg()
 			self.disable_kernel_msg()
-			f=open("/tmp/mptool_on", "w")
-			f.write("on")
-			f.close()
+			with open("/tmp/mptool_on", "w") as f:
+				f.write("on")
 	
 	def set_default(self):
 		self.debug("set_default: start")
@@ -316,36 +310,38 @@ A class for MP including base get/set/test function.
 
 	def send_mcu_msg(self, command, value):
 		self.debug("send_mcu_msg: start")
-		f=open("/tmp/MCU_Cmd", "w")
-		f.write(str(command)+ ";" + str(value))
-		f.close()
+		with open("/tmp/MCU_Cmd", "w") as f:
+			f.write(f"{str(command)};{str(value)}")
 		time.sleep(1)
 
 	def disable_kernel_msg(self):
 		try:
-			f=open("/proc/sys/kernel/printk", "w")
-			f.write("1")
-			f.close()
+			with open("/proc/sys/kernel/printk", "w") as f:
+				f.write("1")
 		except IOError:
 			self.error_code(1003)
 		
 	def disable_mcu_msg(self):
 		try:
-			f=open("/tmp/mcu_to_null", "w")
-			f.write("p close(1)\n")
-			f.write("p creat(\"/dev/null\")\n")
-			f.write("q\n")
-			f.write("y\n")
-			f.close()
+			with open("/tmp/mcu_to_null", "w") as f:
+				f.write("p close(1)\n")
+				f.write("p creat(\"/dev/null\")\n")
+				f.write("q\n")
+				f.write("y\n")
 		except IOError:
 			self.error_code(1001)
 
 		p=subprocess.Popen("pidof mcu_daemon", shell=True, stdout=subprocess.PIPE, stderr=open("/dev/null", "w"))
 		msg=p.communicate()
-		if msg == None:
+		if msg is None:
 			self.error_code(1002)
 		pidof_mcu_daemon = msg[0].strip('\n')
-		p=subprocess.Popen("gdb -x /tmp/mcu_to_null -p " + pidof_mcu_daemon + " /bin/mcu_daemon", shell=True, stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
+		p = subprocess.Popen(
+			f"gdb -x /tmp/mcu_to_null -p {pidof_mcu_daemon} /bin/mcu_daemon",
+			shell=True,
+			stdout=open("/dev/null", "w"),
+			stderr=open("/dev/null", "w"),
+		)
 		msg=p.communicate()
 
 	def output(self, msg):

@@ -34,7 +34,9 @@ XORG_EXCEPTIONS = [
 #     <name_of_package2> : { XORG_VERSION_KEY: <version_of_package2> }}
 #
 def get_xorg_release_pkgs():
-    u = urllib.URLopener().open("http://www.x.org/releases/%s/src/everything/" % XORG_VERSION)
+    u = urllib.URLopener().open(
+        f"http://www.x.org/releases/{XORG_VERSION}/src/everything/"
+    )
     b = BeautifulSoup.BeautifulSoup()
     b.feed(u.read())
     links = b.findAll("a")
@@ -50,8 +52,8 @@ def get_xorg_release_pkgs():
         groups = r.match(href)
         if not groups:
             continue
-        name = groups.group(1)
-        version = groups.group(2)
+        name = groups[1]
+        version = groups[2]
         # Skip packages we don't want to hear about
         if name in XORG_EXCEPTIONS:
             continue
@@ -85,7 +87,7 @@ BUILDROOT_PREFIXES = [
 # to this function will return "xlsfonts".
 def buildroot_strip_prefix(dirname):
     for prefix in BUILDROOT_PREFIXES:
-        if dirname.startswith(prefix + "_"):
+        if dirname.startswith(f"{prefix}_"):
             return dirname[len(prefix) + 1:]
     return dirname
 
@@ -93,12 +95,11 @@ def buildroot_strip_prefix(dirname):
 # Buildroot version of the package by looking at the <foo>_VERSION
 # line.
 def buildroot_get_version(dirname):
-    f = open(os.path.join("package", "x11r7", dirname, dirname + ".mk"))
+    f = open(os.path.join("package", "x11r7", dirname, f"{dirname}.mk"))
     r = re.compile("^([A-Z0-9_]*)_VERSION = ([0-9\.]*)$")
-    for l in f.readlines():
-        m = r.match(l)
-        if m:
-            return m.group(2)
+    for l in f:
+        if m := r.match(l):
+            return m[2]
     return None
 
 # Augment the information of the X.org list of packages (given as

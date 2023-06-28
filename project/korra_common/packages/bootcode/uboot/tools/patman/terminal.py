@@ -51,9 +51,7 @@ class Color(object):
       If color is enabled, returns an ANSI sequence to start the given color,
       otherwise returns empty string
     """
-    if self._enabled:
-      return self.COLOR_START % (color + 30)
-    return ''
+    return self.COLOR_START % (color + 30) if self._enabled else ''
 
   def Stop(self):
     """Retruns a stop color code.
@@ -62,9 +60,7 @@ class Color(object):
       If color is enabled, returns an ANSI color reset sequence, otherwise
       returns empty string
     """
-    if self._enabled:
-      return self.RESET
-    return ''
+    return self.RESET if self._enabled else ''
 
   def Color(self, color, text):
     """Returns text with conditionally added color escape sequences.

@@ -87,7 +87,7 @@ Signed-off-by: Simon Glass <sjg@chromium.org>
         expfd.close()
 
         patchstream.FixPatch(None, inname, series.Series(), None)
-        rc = os.system('diff -u %s %s' % (inname, expname))
+        rc = os.system(f'diff -u {inname} {expname}')
         self.assertEqual(rc, 0)
 
         os.remove(inname)

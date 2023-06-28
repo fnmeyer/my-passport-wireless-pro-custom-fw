@@ -88,9 +88,7 @@ def std_exceptions(etype, value, tb):
     sys.excepthook=sys.__excepthook__
     if issubclass(etype, KeyboardInterrupt):
         pass
-    elif issubclass(etype, IOError) and value.errno == errno.EPIPE:
-        pass
-    else:
+    elif not issubclass(etype, IOError) or value.errno != errno.EPIPE:
         sys.__excepthook__(etype, value, tb)
 sys.excepthook=std_exceptions
 
@@ -101,21 +99,14 @@ if os.geteuid() != 0:
         sys.exit(1)
 
 uname=os.uname()
-if uname[0]=="FreeBSD":
-    proc="/compat/linux/proc/"
-else:
-    proc="/proc/"
-
-split_args=False
-if len(sys.argv)==2 and sys.argv[1] == "--split-args":
-    split_args = True
-
+proc = "/compat/linux/proc/" if uname[0]=="FreeBSD" else "/proc/"
+split_args = len(sys.argv)==2 and sys.argv[1] == "--split-args"
 PAGESIZE=os.sysconf("SC_PAGE_SIZE")/1024 #KiB
 our_pid=os.getpid()
 
 #(major,minor,release)
 def kernel_ver():
-    kv=open(proc+"sys/kernel/osrelease", "rt").readline().split(".")[:3]
+    kv = open(f"{proc}sys/kernel/osrelease", "rt").readline().split(".")[:3]
     last=len(kv)
     if last == 2:
         kv.append('0')
@@ -132,14 +123,13 @@ try:
     kv=kernel_ver()
 except (IOError, OSError):
     value = sys.exc_info()[1]
-    if value.errno == errno.ENOENT:
-        sys.stderr.write(
-          "Couldn't access /proc\n"
-          "Only GNU/Linux and FreeBSD (with linprocfs) are supported\n")
-        sys.exit(2)
-    else:
+    if value.errno != errno.ENOENT:
         raise
 
+    sys.stderr.write(
+      "Couldn't access /proc\n"
+      "Only GNU/Linux and FreeBSD (with linprocfs) are supported\n")
+    sys.exit(2)
 have_pss=0
 
 #return Private,Shared
@@ -153,7 +143,7 @@ def getMemStats(pid):
     Rss=int(open(proc+str(pid)+"/statm", "rt").readline().split()[1])*PAGESIZE
     if os.path.exists(proc+str(pid)+"/smaps"): #stat
         digester = md5_new()
-        for line in open(proc+str(pid)+"/smaps", "rb").readlines(): #open
+        for line in open(proc+str(pid)+"/smaps", "rb"):
             # Note we checksum smaps as maps is usually but
             # not always different for separate processes.
             digester.update(line)
@@ -166,13 +156,13 @@ def getMemStats(pid):
                 have_pss=1
                 Pss_lines.append(line)
         mem_id = digester.hexdigest()
-        Shared=sum([int(line.split()[1]) for line in Shared_lines])
-        Private=sum([int(line.split()[1]) for line in Private_lines])
+        Shared = sum(int(line.split()[1]) for line in Shared_lines)
+        Private = sum(int(line.split()[1]) for line in Private_lines)
         #Note Shared + Private = Rss above
         #The Rss in smaps includes video card mem etc.
         if have_pss:
             pss_adjust=0.5 #add 0.5KiB as this average error due to trunctation
-            Pss=sum([float(line.split()[1])+pss_adjust for line in Pss_lines])
+            Pss = sum(float(line.split()[1])+pss_adjust for line in Pss_lines)
             Shared = Pss - Private
     elif (2,6,1) <= kv <= (2,6,9):
         Shared=0 #lots of overestimation, but what can we do?
@@ -194,14 +184,10 @@ def getCmdName(pid):
         path = path[:-10]
         if os.path.exists(path):
             path += " [updated]"
+        elif os.path.exists(cmdline[0]):
+            path = f"{cmdline[0]} [updated]"
         else:
-            #The path could be have prelink stuff so try cmdline
-            #which might have the full path present. This helped for:
-            #/usr/libexec/notification-area-applet.#prelink#.fX7LCT (deleted)
-            if os.path.exists(cmdline[0]):
-                path = cmdline[0] + " [updated]"
-            else:
-                path += " [deleted]"
+            path += " [deleted]"
     exe = os.path.basename(path)
     cmd = open(proc+"%d/status" % pid, "rt").readline()[6:-1]
     if exe.startswith(cmd):
@@ -233,12 +219,9 @@ for pid in os.listdir(proc):
         private, shared, mem_id = getMemStats(pid)
     except:
         continue #process gone
-    if shareds.get(cmd):
-        if have_pss: #add shared portion of PSS together
-            shareds[cmd]+=shared
-        elif shareds[cmd] < shared: #just take largest shared val
-            shareds[cmd]=shared
-    else:
+    if shareds.get(cmd) and have_pss: #add shared portion of PSS together
+        shareds[cmd]+=shared
+    elif shareds.get(cmd) and shareds[cmd] < shared or not shareds.get(cmd): #just take largest shared val
         shareds[cmd]=shared
     cmds[cmd]=cmds.setdefault(cmd,0)+private
     if cmd in count:
@@ -278,10 +261,7 @@ def human(num, power="Ki"):
     return "%.1f %s" % (num,power)
 
 def cmd_with_count(cmd, count):
-    if count>1:
-       return "%s (%u)" % (cmd, count)
-    else:
-       return cmd
+    return "%s (%u)" % (cmd, count) if count>1 else cmd
 
 if __name__ == '__main__':
     sys.stdout.write(" Private  +   Shared  =  RAM used\tProgram \n\n")
@@ -307,19 +287,12 @@ if __name__ == '__main__':
 def shared_val_accuracy():
     """http://wiki.apache.org/spamassassin/TopSharedMemoryBug"""
     if kv[:2] == (2,4):
-        if open(proc+"meminfo", "rt").read().find("Inact_") == -1:
-            return 1
-        return 0
+        return 1 if open(f"{proc}meminfo", "rt").read().find("Inact_") == -1 else 0
     elif kv[:2] == (2,6):
         pid = str(os.getpid())
         if os.path.exists(proc+pid+"/smaps"):
-            if open(proc+pid+"/smaps", "rt").read().find("Pss:")!=-1:
-                return 2
-            else:
-                return 1
-        if (2,6,1) <= kv <= (2,6,9):
-            return -1
-        return 0
+            return 2 if open(proc+pid+"/smaps", "rt").read().find("Pss:")!=-1 else 1
+        return -1 if (2,6,1) <= kv <= (2,6,9) else 0
     elif kv[0] > 2:
         return 2
     else:

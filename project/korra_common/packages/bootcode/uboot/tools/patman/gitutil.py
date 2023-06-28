@@ -41,8 +41,7 @@ def CountCommitsToBranch():
     pipe = [['git', 'log', '--oneline', '@{upstream}..'],
             ['wc', '-l']]
     stdout = command.RunPipe(pipe, capture=True, oneline=True)
-    patch_count = int(stdout)
-    return patch_count
+    return int(stdout)
 
 def CreatePatches(start, count, series):
     """Create a series of patches from the top of the current branch.
@@ -58,23 +57,19 @@ def CreatePatches(start, count, series):
         List of filenames of patch files
     """
     if series.get('version'):
-        version = '%s ' % series['version']
+        version = f"{series['version']} "
     cmd = ['git', 'format-patch', '-M', '--signoff']
     if series.get('cover'):
         cmd.append('--cover-letter')
-    prefix = series.GetPatchPrefix()
-    if prefix:
-        cmd += ['--subject-prefix=%s' % prefix]
+    if prefix := series.GetPatchPrefix():
+        cmd += [f'--subject-prefix={prefix}']
     cmd += ['HEAD~%d..HEAD~%d' % (start + count, start)]
 
     stdout = command.RunList(cmd)
     files = stdout.splitlines()
 
     # We have an extra file if there is a cover letter
-    if series.get('cover'):
-       return files[0], files[1:]
-    else:
-       return None, files
+    return (files[0], files[1:]) if series.get('cover') else (None, files)
 
 def ApplyPatch(verbose, fname):
     """Apply a patch with git am to test it
@@ -196,11 +191,9 @@ def BuildEmailList(in_list, tag=None, alias=None):
         raw += LookupEmail(item, alias)
     result = []
     for item in raw:
-        if not item in result:
+        if item not in result:
             result.append(item)
-    if tag:
-        return ['%s %s%s%s' % (tag, quote, email, quote) for email in result]
-    return result
+    return [f'{tag} {quote}{email}{quote}' for email in result] if tag else result
 
 def EmailPatches(series, cover_fname, args, dry_run, cc_fname,
         self_only=False, alias=None):
@@ -257,7 +250,7 @@ def EmailPatches(series, cover_fname, args, dry_run, cc_fname,
     cmd = ['git', 'send-email', '--annotate']
     cmd += to
     cmd += cc
-    cmd += ['--cc-cmd', '"%s --cc-cmd %s"' % (sys.argv[0], cc_fname)]
+    cmd += ['--cc-cmd', f'"{sys.argv[0]} --cc-cmd {cc_fname}"']
     if cover_fname:
         cmd.append(cover_fname)
     cmd += args
@@ -317,16 +310,16 @@ def LookupEmail(lookup_name, alias=None, level=0):
     lookup_name = lookup_name.lower()
 
     if level > 10:
-        raise OSError, "Recursive email alias at '%s'" % lookup_name
+        raise (OSError, f"Recursive email alias at '{lookup_name}'")
 
     out_list = []
     if lookup_name:
-        if not lookup_name in alias:
-            raise ValueError, "Alias '%s' not found" % lookup_name
+        if lookup_name not in alias:
+            raise (ValueError, f"Alias '{lookup_name}' not found")
         for item in alias[lookup_name]:
             todo = LookupEmail(item, alias, level + 1)
             for new_item in todo:
-                if not new_item in out_list:
+                if new_item not in out_list:
                     out_list.append(new_item)
 
     #print "No match for alias '%s'" % lookup_name
@@ -363,8 +356,7 @@ def GetDefaultUserName():
     Returns:
         User name found in .gitconfig file, or None if none
     """
-    uname = command.OutputOneLine('git', 'config', '--global', 'user.name')
-    return uname
+    return command.OutputOneLine('git', 'config', '--global', 'user.name')
 
 def GetDefaultUserEmail():
     """Gets the user.email from the global .gitconfig file.
@@ -372,16 +364,13 @@ def GetDefaultUserEmail():
     Returns:
         User's email found in .gitconfig file, or None if none
     """
-    uemail = command.OutputOneLine('git', 'config', '--global', 'user.email')
-    return uemail
+    return command.OutputOneLine('git', 'config', '--global', 'user.email')
 
 def Setup():
     """Set up git utils, by reading the alias files."""
     settings.Setup('')
 
-    # Check for a git alias file also
-    alias_fname = GetAliasFile()
-    if alias_fname:
+    if alias_fname := GetAliasFile():
         settings.ReadGitAliases(alias_fname)
 
 if __name__ == "__main__":

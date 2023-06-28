@@ -434,7 +434,7 @@ class Config():
 
                 # We first look in $srctree. os.path.join() won't work here as
                 # an absolute path in filename would override $srctree.
-                srctree_filename = os.path.normpath(self.srctree + "/" + filename)
+                srctree_filename = os.path.normpath(f"{self.srctree}/{filename}")
                 if os.path.exists(srctree_filename):
                     return srctree_filename
 
@@ -571,22 +571,27 @@ class Config():
 
     def __str__(self):
         """Returns a string containing various information about the Config."""
-        return _sep_lines("Configuration",
-                          "File                                   : " + self.filename,
-                          "Base directory                         : " + self.base_dir,
-                          "Value of $ARCH at creation time        : " +
-                            ("(not set)" if self.arch is None else self.arch),
-                          "Value of $SRCARCH at creation time     : " +
-                            ("(not set)" if self.srcarch is None else self.srcarch),
-                          "Source tree (derived from $srctree;",
-                          "defaults to '.' if $srctree isn't set) : " + self.srctree,
-                          "Most recently loaded .config           : " +
-                            ("(no .config loaded)" if self.config_filename is None else
-                             self.config_filename),
-                          "Print warnings                         : " +
-                            bool_str[self.print_warnings],
-                          "Print assignments to undefined symbols : " +
-                            bool_str[self.print_undef_assign])
+        return _sep_lines(
+            "Configuration",
+            f"File                                   : {self.filename}",
+            f"Base directory                         : {self.base_dir}",
+            "Value of $ARCH at creation time        : "
+            + ("(not set)" if self.arch is None else self.arch),
+            "Value of $SRCARCH at creation time     : "
+            + ("(not set)" if self.srcarch is None else self.srcarch),
+            "Source tree (derived from $srctree;",
+            f"defaults to '.' if $srctree isn't set) : {self.srctree}",
+            "Most recently loaded .config           : "
+            + (
+                "(no .config loaded)"
+                if self.config_filename is None
+                else self.config_filename
+            ),
+            "Print warnings                         : "
+            + bool_str[self.print_warnings],
+            "Print assignments to undefined symbols : "
+            + bool_str[self.print_undef_assign],
+        )
 
 
     #
@@ -651,10 +656,7 @@ class Config():
 
         # Main tokenization loop. (Handles tokens past the first one.)
         while i < strlen:
-            # Test for an identifier/keyword preceded by whitespace first; this
-            # is the most common case.
-            id_keyword_match = id_keyword_re.match(s, i)
-            if id_keyword_match:
+            if id_keyword_match := id_keyword_re.match(s, i):
                 # We have an identifier or keyword. The above also stripped any
                 # whitespace for us.
                 name = id_keyword_match.group(1)
@@ -665,8 +667,6 @@ class Config():
                 keyword = keywords.get(name)
                 if keyword is not None:
                     append(keyword)
-                # What would ordinarily be considered a name is treated as a
-                # string after certain tokens.
                 elif previous in string_lex:
                     append(name)
                 else:
@@ -675,7 +675,7 @@ class Config():
                     # time we see it.
                     sym = self._sym_lookup(name, not for_eval)
 
-                    if previous == T_CONFIG or previous == T_MENUCONFIG:
+                    if previous in [T_CONFIG, T_MENUCONFIG]:
                         # If the previous token is T_(MENU)CONFIG
                         # ("(menu)config"), we're tokenizing the first line of
                         # a symbol definition, and should remember this as a
@@ -699,7 +699,7 @@ class Config():
                 c = s[0]
 
                 # String literal (constant symbol)
-                if c == '"' or c == "'":
+                if c in ['"', "'"]:
                     i += 1
 
                     if "\\" in s:
@@ -883,14 +883,14 @@ class Config():
                          self.parse_expr_linenr)
 
         if self.parse_expr_cur_sym_or_choice is not None and \
-           isinstance(sym_or_string, Symbol):
+               isinstance(sym_or_string, Symbol):
             self.parse_expr_cur_sym_or_choice.referenced_syms.add(sym_or_string)
 
         next_token = feed.peek_next()
 
         # For conditional expressions ('depends on <expr>', '... if <expr>',
         # etc.), "m" and m are rewritten to "m" && MODULES.
-        if next_token != T_EQUAL and next_token != T_UNEQUAL:
+        if next_token not in [T_EQUAL, T_UNEQUAL]:
             if self.parse_expr_transform_m and (sym_or_string is self.m or
                                                 sym_or_string == "m"):
                 return (AND, ["m", self._sym_lookup("MODULES")])
@@ -900,7 +900,7 @@ class Config():
         sym_or_string_2 = feed.get_next()
 
         if self.parse_expr_cur_sym_or_choice is not None and \
-           isinstance(sym_or_string_2, Symbol):
+               isinstance(sym_or_string_2, Symbol):
             self.parse_expr_cur_sym_or_choice.referenced_syms.add(sym_or_string_2)
 
         if sym_or_string is self.m:
@@ -980,7 +980,7 @@ class Config():
             if t0 == end_marker:
                 return block
 
-            if t0 == T_CONFIG or t0 == T_MENUCONFIG:
+            if t0 in [T_CONFIG, T_MENUCONFIG]:
                 # The tokenizer will automatically allocate a new Symbol object
                 # for any new names it encounters, so we don't need to worry
                 # about that here.
@@ -1441,10 +1441,7 @@ error, and you should e-mail kconfiglib@gmail.com.
         # is often rewritten to "m" && MODULES by both the C implementation and
         # kconfiglib, which takes care of cases where "m" should be false if
         # we're running without modules.
-        if res == "m" and not self._has_modules():
-            return "y"
-
-        return res
+        return "y" if res == "m" and not self._has_modules() else res
 
     def _eval_expr_2(self, expr):
         if expr is None:
@@ -1453,12 +1450,9 @@ error, and you should e-mail kconfiglib@gmail.com.
         if isinstance(expr, Symbol):
             # Non-bool/tristate symbols are always "n" in a tristate sense,
             # regardless of their value
-            if expr.type != BOOL and expr.type != TRISTATE:
-                return "n"
-            return expr.get_value()
-
+            return "n" if expr.type not in [BOOL, TRISTATE] else expr.get_value()
         if isinstance(expr, str):
-            return expr if (expr == "y" or expr == "m") else "n"
+            return expr if expr in ["y", "m"] else "n"
 
         first_expr = expr[0]
 
@@ -1516,10 +1510,7 @@ error, and you should e-mail kconfiglib@gmail.com.
                         "unknown operation {0}.".format(first_expr))
 
     def _get_str_value(self, obj):
-        if isinstance(obj, str):
-            return obj
-        # obj is a Symbol
-        return obj.get_value()
+        return obj if isinstance(obj, str) else obj.get_value()
 
     def _eval_min(self, e1, e2):
         e1_eval = self._eval_expr(e1)

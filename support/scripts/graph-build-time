@@ -100,9 +100,7 @@ class Package:
             for step in list(self.steps_duration.keys()):
                 duration += self.steps_duration[step]
             return duration
-        if step in self.steps_duration:
-            return self.steps_duration[step]
-        return 0
+        return self.steps_duration[step] if step in self.steps_duration else 0
 
 # Generate an histogram of the time spent in each step of each
 # package.
@@ -118,9 +116,7 @@ def pkg_histogram(data, output, order="build"):
     # Prepare the vals array, containing one entry for each step
     vals = []
     for step in steps:
-        val = []
-        for p in data:
-            val.append(p.get_duration(step))
+        val = [p.get_duration(step) for p in data]
         vals.append(val)
 
     bottom = [0] * n_pkgs
@@ -174,11 +170,7 @@ def pkg_histogram(data, output, order="build"):
 
 # Generate a pie chart with the time spent building each package.
 def pkg_pie_time_per_package(data, output):
-    # Compute total build duration
-    total = 0
-    for p in data:
-        total += p.get_duration()
-
+    total = sum(p.get_duration() for p in data)
     # Build the list of labels and values, and filter the packages
     # that account for less than 1% of the build time.
     labels = []
@@ -215,9 +207,7 @@ def pkg_pie_time_per_package(data, output):
 def pkg_pie_time_per_step(data, output):
     steps_values = []
     for step in steps:
-        val = 0
-        for p in data:
-            val += p.get_duration(step)
+        val = sum(p.get_duration(step) for p in data)
         steps_values.append(val)
 
     plt.figure()
@@ -240,10 +230,7 @@ def pkg_pie_time_per_step(data, output):
 # Package objects, filed with the duration of each step and the total
 # duration of the package.
 def read_data(input_file):
-    if input_file is None:
-        input_file = sys.stdin
-    else:
-        input_file = open(input_file)
+    input_file = sys.stdin if input_file is None else open(input_file)
     reader = csv.reader(input_file, delimiter=':')
     pkgs = []
 
@@ -284,13 +271,9 @@ args = parser.parse_args()
 
 d = read_data(args.input)
 
-if args.alternate_colors:
-    colors = alternate_colors
-else:
-    colors = default_colors
-
+colors = alternate_colors if args.alternate_colors else default_colors
 if args.type == "histogram" or args.type is None:
-    if args.order == "build" or args.order == "duration" or args.order == "name":
+    if args.order in ["build", "duration", "name"]:
         pkg_histogram(d, args.output, args.order)
     elif args.order is None:
         pkg_histogram(d, args.output, "name")

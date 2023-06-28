@@ -143,20 +143,17 @@ class PatchStream:
         # Initially we have no output. Prepare the input line string
         out = []
         line = line.rstrip('\n')
-        if self.is_log:
-            if line[:4] == '    ':
+        if line[:4] == '    ':
+            if self.is_log:
                 line = line[4:]
 
         # Handle state transition and skipping blank lines
         series_match = re_series.match(line)
         commit_match = re_commit.match(line) if self.is_log else None
-        tag_match = None
-        if self.state == STATE_PATCH_HEADER:
-            tag_match = re_tag.match(line)
+        tag_match = re_tag.match(line) if self.state == STATE_PATCH_HEADER else None
         is_blank = not line.strip()
         if is_blank:
-            if (self.state == STATE_MSG_HEADER
-                    or self.state == STATE_PATCH_SUBJECT):
+            if self.state in [STATE_MSG_HEADER, STATE_PATCH_SUBJECT]:
                 self.state += 1
 
             # We don't have a subject in the text stream of patch files
@@ -175,18 +172,16 @@ class PatchStream:
                     if self.is_log:
                         self.series.notes += self.section
                 else:
-                    self.warn.append("Unknown section '%s'" % self.in_section)
+                    self.warn.append(f"Unknown section '{self.in_section}'")
                 self.in_section = None
                 self.skip_blank = True
                 self.section = []
             else:
                 self.section.append(line)
 
-        # Detect the commit subject
         elif not is_blank and self.state == STATE_PATCH_SUBJECT:
             self.commit.subject = line
 
-        # Detect the tags we want to remove, and skip blank lines
         elif re_remove.match(line):
             self.skip_blank = True
 
@@ -197,12 +192,10 @@ class PatchStream:
         elif self.skip_blank and is_blank:
             self.skip_blank = False
 
-        # Detect the start of a cover letter section
         elif re_cover.match(line):
             self.in_section = 'cover'
             self.skip_blank = False
 
-        # If we are in a change list, key collected lines until a blank one
         elif self.in_change:
             if is_blank:
                 # Blank line ends this change list
@@ -211,7 +204,6 @@ class PatchStream:
                 self.series.AddChange(self.in_change, self.commit, line)
             self.skip_blank = False
 
-        # Detect Series-xxx tags
         elif series_match:
             name = series_match.group(1)
             value = series_match.group(2)
@@ -220,19 +212,16 @@ class PatchStream:
                 try:
                     value = int(value)
                 except ValueError as str:
-                    raise ValueError("%s: Cannot decode version info '%s'" %
-                        (self.commit.hash, line))
-                self.in_change = int(value)
+                    raise ValueError(f"{self.commit.hash}: Cannot decode version info '{line}'")
+                self.in_change = value
             else:
                 self.AddToSeries(line, name, value)
                 self.skip_blank = True
 
-        # Detect the start of a new commit
         elif commit_match:
             self.CloseCommit()
             self.commit = commit.Commit(commit_match.group(1)[:7])
 
-        # Detect tags in the commit message
         elif tag_match:
             # Onlly allow a single signoff tag
             if tag_match.group(1) == 'Signed-off-by':
@@ -241,29 +230,22 @@ class PatchStream:
                             'tag')
                 self.signoff += [line]
 
-            # Remove Tested-by self, since few will take much notice
             elif (tag_match.group(1) == 'Tested-by' and
                     tag_match.group(2).find(os.getenv('USER') + '@') != -1):
-                self.warn.append("Ignoring %s" % line)
+                self.warn.append(f"Ignoring {line}")
             elif tag_match.group(1) == 'Cc':
                 self.commit.AddCc(tag_match.group(2).split(','))
             else:
                 self.tags.append(line);
 
-        # Well that means this is an ordinary line
         else:
-            pos = 1
             # Look for ugly ASCII characters
-            for ch in line:
+            for pos, ch in enumerate(line, start=1):
                 # TODO: Would be nicer to report source filename and line
                 if ord(ch) > 0x80:
                     self.warn.append("Line %d/%d ('%s') has funny ascii char" %
                         (self.linenum, pos, line))
-                pos += 1
-
-            # Look for space before tab
-            m = re_space_before_tab.match(line)
-            if m:
+            if m := re_space_before_tab.match(line):
                 self.warn.append('Line %d/%d has space before tab' %
                     (self.linenum, m.start()))
 
@@ -308,10 +290,9 @@ class PatchStream:
             infd: Input stream file object
             outfd: Output stream file object
         """
-        # Extract the filename from each diff, for nice warnings
-        fname = None
         last_fname = None
         re_fname = re.compile('diff --git a/(.*) b/.*')
+        fname = None
         while True:
             line = infd.readline()
             if not line:
@@ -323,13 +304,12 @@ class PatchStream:
                 match = re_fname.match(line)
                 if match:
                     last_fname = fname
-                    fname = match.group(1)
+                    fname = match[1]
                 if line == '+':
                     self.blank_count += 1
                 else:
                     if self.blank_count and (line == '-- ' or match):
-                        self.warn.append("Found possible blank line(s) at "
-                                "end of file '%s'" % last_fname)
+                        self.warn.append(f"Found possible blank line(s) at end of file '{last_fname}'")
                     outfd.write('+\n' * self.blank_count)
                     outfd.write(line + '\n')
                     self.blank_count = 0
@@ -372,11 +352,10 @@ def FixPatch(backup_dir, fname, series, commit):
     """
     handle, tmpname = tempfile.mkstemp()
     outfd = os.fdopen(handle, 'w')
-    infd = open(fname, 'r')
-    ps = PatchStream(series)
-    ps.commit = commit
-    ps.ProcessStream(infd, outfd)
-    infd.close()
+    with open(fname, 'r') as infd:
+        ps = PatchStream(series)
+        ps.commit = commit
+        ps.ProcessStream(infd, outfd)
     outfd.close()
 
     # Create a backup file if required
@@ -418,27 +397,24 @@ def InsertCoverLetter(fname, series, count):
         series: Series object
         count: Number of patches in the series
     """
-    fd = open(fname, 'r')
-    lines = fd.readlines()
-    fd.close()
+    with open(fname, 'r') as fd:
+        lines = fd.readlines()
+    with open(fname, 'w') as fd:
+        text = series.cover
+        prefix = series.GetPatchPrefix()
+        for line in lines:
+            if line.startswith('Subject:'):
+                # TODO: if more than 10 patches this should save 00/xx, not 0/xx
+                line = 'Subject: [%s 0/%d] %s\n' % (prefix, count, text[0])
 
-    fd = open(fname, 'w')
-    text = series.cover
-    prefix = series.GetPatchPrefix()
-    for line in lines:
-        if line.startswith('Subject:'):
-            # TODO: if more than 10 patches this should save 00/xx, not 0/xx
-            line = 'Subject: [%s 0/%d] %s\n' % (prefix, count, text[0])
+            # Insert our cover letter
+            elif line.startswith('*** BLURB HERE ***'):
+                # First the blurb test
+                line = '\n'.join(text[1:]) + '\n'
+                if series.get('notes'):
+                    line += '\n'.join(series.notes) + '\n'
 
-        # Insert our cover letter
-        elif line.startswith('*** BLURB HERE ***'):
-            # First the blurb test
-            line = '\n'.join(text[1:]) + '\n'
-            if series.get('notes'):
-                line += '\n'.join(series.notes) + '\n'
-
-            # Now the change list
-            out = series.MakeChangeLog(None)
-            line += '\n' + '\n'.join(out)
-        fd.write(line)
-    fd.close()
+                # Now the change list
+                out = series.MakeChangeLog(None)
+                line += '\n' + '\n'.join(out)
+            fd.write(line)
